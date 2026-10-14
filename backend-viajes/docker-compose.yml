@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  backend-viajes:
+    build: .
+    container_name: servicio_viajes_app
+    restart: always
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      # Si tu base de datos MySQL está en otro contenedor o IP local, agrégala aquí:
+      # - DB_HOST=host.docker.internal 
+      # - DB_USER=tu_usuario
+      # - DB_PASSWORD=tu_contraseña
+      # - DB_NAME=tu_base_de_datos
