@@ -3,5 +3,5 @@ WORKDIR /app
 COPY backend-viajes/package*.json ./
 RUN npm install --production
 COPY backend-viajes/ .
-EXPOSE 3002
+EXPOSE 3004
 CMD ["node", "server.js"]

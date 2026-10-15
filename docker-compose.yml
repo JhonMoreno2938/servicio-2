@@ -6,10 +6,10 @@ services:
     container_name: servicio_viajes_app
     restart: always
     ports:
-      - "3002:3002"
+      - "3004:3004"
     environment:
       - NODE_ENV=production
-      - PORT=3002
+      - PORT=3004
       # Si tu base de datos MySQL está en otro contenedor o IP local, agrégala aquí:
       # - DB_HOST=host.docker.internal 
       # - DB_USER=tu_usuario
