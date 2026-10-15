@@ -85,7 +85,7 @@ app.get('/api/viajes/:uuid', async (req, res) => {
 });
 
 // Iniciar servidor
-const PORT = process.env.PORT || 3004;
+const PORT = process.env.PORT || 8082;
 app.listen(PORT, () => {
     console.log(`✅ Servidor corriendo en el puerto ${PORT}`);
 });

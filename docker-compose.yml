@@ -1,17 +1,10 @@
-version: '3.8'
-
 services:
   backend-viajes:
     build: .
     container_name: servicio_viajes_app
     restart: always
     ports:
-      - "3004:3004"
+      - "8082:8082"   # <--- Cambia el puerto externo a 3005
     environment:
       - NODE_ENV=production
-      - PORT=3004
-      # Si tu base de datos MySQL está en otro contenedor o IP local, agrégala aquí:
-      # - DB_HOST=host.docker.internal 
-      # - DB_USER=tu_usuario
-      # - DB_PASSWORD=tu_contraseña
-      # - DB_NAME=tu_base_de_datos
+      - PORT=8082     # El puerto interno se queda en 3004

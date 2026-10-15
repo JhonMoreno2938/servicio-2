@@ -36,7 +36,7 @@ class _ViajesScreenState extends State<ViajesScreen> {
   // URLs de redirección correspondientes al Servicio A
   final String loginUrl = 'http://192.168.88.30:8081/index.html';
   final String dashboardUrl = 'http://192.168.88.30:8081/dashboard.html';
-  final String baseUrl = 'http://192.168.88.30:3004';
+  final String baseUrl = 'http://192.168.88.30:8082';
 
   String? usuarioFinal;
   String? tokenFinal;

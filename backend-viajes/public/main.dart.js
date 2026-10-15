@@ -42140,7 +42140,7 @@ var $async$xI=A.U(function(a,b){if(a===1){p.push(b)
 s=q}for(;;)switch(s){case 0:q=3
 l=t.N
 s=6
-return A.V(A.aBL(A.f9("http://192.168.88.30:3002/api/ciudades"),A.aq(["Authorization","Bearer "+A.k(o.w)],l,l)),$async$xI)
+return A.V(A.aBL(A.f9("http://192.168.88.30:8082/api/ciudades"),A.aq(["Authorization","Bearer "+A.k(o.w)],l,l)),$async$xI)
 case 6:n=b
 if(n.b===200){o.ah(new A.apR(o,n))
 A.ia("\u2705 "+J.ct(o.z)+" ciudades cargadas")}else A.ia("\u274c Error al cargar ciudades: HTTP "+n.b)
@@ -42163,7 +42163,7 @@ var $async$ti=A.U(function(a,b){if(a===1){p.push(b)
 s=q}for(;;)switch(s){case 0:q=3
 l=t.N
 s=6
-return A.V(A.aBL(A.f9("http://192.168.88.30:3002/api/viajes/"+A.k(o.r)),A.aq(["Authorization","Bearer "+A.k(o.w)],l,l)),$async$ti)
+return A.V(A.aBL(A.f9("http://192.168.88.30:8082/api/viajes/"+A.k(o.r)),A.aq(["Authorization","Bearer "+A.k(o.w)],l,l)),$async$ti)
 case 6:n=b
 if(n.b===200){o.ah(new A.apS(o,n))
 A.ia("\u2705 "+J.ct(o.Q)+" viajes cargados para "+A.k(o.r))}else A.ia("\u274c Error al cargar viajes: HTTP "+n.b)
@@ -42191,7 +42191,7 @@ h=n.ax
 g=t.N
 m=A.aq(["ciudad_id",e,"fecha_viaje",i.a.a,"motivo",h.a.a,"usuario_uuid",n.r],g,t.X)
 p=4
-e=A.f9("http://192.168.88.30:3002/api/viajes")
+e=A.f9("http://192.168.88.30:8082/api/viajes")
 g=A.aq(["Content-Type","application/json","Authorization","Bearer "+A.k(n.w)],g,g)
 s=7
 return A.V(A.aQ4(e,B.cc.U0(m,null),g),$async$zZ)
