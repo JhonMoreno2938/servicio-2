@@ -12,9 +12,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Configuración de la conexión a MySQL
 const pool = mysql.createPool({
-    host: '192.168.0.103',
-    port: 3308,
-    user: 'admin',
+    host: '192.168.88.30',
+    port: 3311,
+    user: 'root',
     password: 'admin',
     database: 'viaje',
     waitForConnections: true,
