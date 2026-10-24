@@ -12,10 +12,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Configuración de la conexión a MySQL
 const pool = mysql.createPool({
-    host: '192.168.0.103',
-    port: 3309,
+    host: 'localhost',
+    port: 3306,
     user: 'root',
-    password: 'admin',
+    password: 'Jh0n-1lex1nder',
     database: 'terminal',
     waitForConnections: true,
     connectionLimit: 10,
@@ -565,6 +565,7 @@ app.get('/api/transportes/:id/pasajeros', async (req, res) => {
         });
     }
 });
+
 
 // Iniciar servidor
 const PORT = process.env.PORT || 8083;

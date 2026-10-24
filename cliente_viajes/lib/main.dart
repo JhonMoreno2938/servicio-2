@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'config/theme.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -18,10 +20,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Servicio B - Autenticación',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.theme,
       home: const ServicioBScreen(),
     );
   }
@@ -36,9 +35,9 @@ class ServicioBScreen extends StatefulWidget {
 
 class _ServicioBScreenState extends State<ServicioBScreen> {
   // URLs del Servicio A
-final String loginUrl = 'http://192.168.0.103:8081/index.html';
-final String dashboardUrl = 'http://192.168.0.103:8081/dashboard.html';
-final String baseUrl = 'http://192.168.0.103:8083';
+  final String loginUrl = 'http://127.0.0.1:5500/login_dashboard.html';
+  final String dashboardUrl = 'http://127.0.0.1:5500/dashboard.html';
+  final String baseUrl = 'http://127.0.0.1:8083';
 
   String? usuarioFinal;
   String? tokenFinal;
@@ -329,6 +328,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+      shape: AppTheme.formaTarjeta,
         title: const Text('Inactivar transporte'),
         content: Text('¿Seguro que quieres inactivar el transporte $id?'),
         actions: [
@@ -367,7 +367,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
       if (respuesta.statusCode == 200) {
         _mostrarSnack(
           (datos['mensaje'] ?? 'Transporte inactivado con éxito').toString(),
-          Colors.green,
+          AppColors.verde,
         );
         _recargarTablas();
       } else {
@@ -376,12 +376,12 @@ final String baseUrl = 'http://192.168.0.103:8083';
                   'No fue posible inactivar el transporte '
                       '(código ${respuesta.statusCode})')
               .toString(),
-          Colors.red,
+          AppColors.rojo,
         );
       }
     } catch (error) {
       if (!mounted) return;
-      _mostrarSnack('No se pudo conectar con el servidor: $error', Colors.red);
+      _mostrarSnack('No se pudo conectar con el servidor: $error', AppColors.rojo);
     } finally {
       if (mounted) {
         setState(() => inactivandoId = null);
@@ -418,6 +418,27 @@ final String baseUrl = 'http://192.168.0.103:8083';
     if (cambio == true && mounted) {
       _recargarTablas();
     }
+  }
+
+  // ============================================
+  // 10. VER PASAJEROS DE UN TRANSPORTE
+  // GET /api/transportes/:id/pasajeros
+  // ============================================
+  void _abrirVerMas(Map<String, dynamic> fila) {
+    final id = _idTransporte(fila);
+    if (id == null) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return PasajerosTransporteDialog(
+          baseUrl: baseUrl,
+          transporteId: id,
+          etiqueta: _etiqueta,
+          textoCelda: _textoCelda,
+        );
+      },
+    );
   }
 
   // ============================================
@@ -466,6 +487,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
     required ScrollController scrollV,
     bool conInactivar = false,
     bool conAdquirir = false,
+    bool conVerMas = false,
   }) {
     final ancho = MediaQuery.of(context).size.width;
     final anchoTabla = ancho > 1048 ? 1000.0 : ancho - 48;
@@ -473,7 +495,9 @@ final String baseUrl = 'http://192.168.0.103:8083';
     return SizedBox(
       width: anchoTabla,
       child: Card(
-        elevation: 4,
+        elevation: 2,
+        color: Colors.white,
+        shape: AppTheme.formaTarjeta,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -481,15 +505,12 @@ final String baseUrl = 'http://192.168.0.103:8083';
             children: [
               Row(
                 children: [
-                  Icon(icono, color: Colors.blue),
+                  Icon(icono, color: AppColors.verde),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       titulo,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   IconButton(
@@ -510,9 +531,172 @@ final String baseUrl = 'http://192.168.0.103:8083';
                 scrollV: scrollV,
                 conInactivar: conInactivar,
                 conAdquirir: conAdquirir,
+                conVerMas: conVerMas,
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // Botones de acción de una fila: Inactivar, Ver más y Adquirir.
+  List<Widget> _botonesAccion(
+    Map<String, dynamic> fila, {
+    required bool conInactivar,
+    required bool conAdquirir,
+    required bool conVerMas,
+  }) {
+    final id = _idTransporte(fila);
+    const sinId = 'La consulta no devuelve el ID del transporte';
+    final botones = <Widget>[];
+
+    // Destructivo: rojo.
+    if (conInactivar) {
+      final yaInactivo = _estaInactivo(fila);
+      final puedeInactivar =
+          id != null && !yaInactivo && inactivandoId == null;
+      final inactivando = id != null && inactivandoId == id.toString();
+
+      botones.add(
+        Tooltip(
+          message: id == null
+              ? sinId
+              : (yaInactivo ? 'Ya está inactivo' : 'Inactivar'),
+          child: OutlinedButton.icon(
+            onPressed: puedeInactivar ? () => _inactivarTransporte(fila) : null,
+            icon: inactivando
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.block, size: 18),
+            label: const Text('Inactivar'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.rojo,
+              side: BorderSide(
+                color: puedeInactivar ? AppColors.rojo : AppColors.borde,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Informativo: azul.
+    if (conVerMas) {
+      botones.add(
+        Tooltip(
+          message: id == null
+              ? sinId
+              : 'Ver los pasajeros de este transporte',
+          child: FilledButton.tonalIcon(
+            onPressed: id == null ? null : () => _abrirVerMas(fila),
+            icon: const Icon(Icons.visibility, size: 18),
+            label: const Text('Ver más'),
+            style: FilledButton.styleFrom(foregroundColor: AppColors.azul),
+          ),
+        ),
+      );
+    }
+
+    // Acción principal: verde.
+    if (conAdquirir) {
+      botones.add(
+        Tooltip(
+          message: id == null ? sinId : 'Adquirir cupos',
+          child: FilledButton.tonalIcon(
+            onPressed: id == null ? null : () => _abrirAdquirir(fila),
+            icon: const Icon(Icons.add_shopping_cart, size: 18),
+            label: const Text('Adquirir'),
+          ),
+        ),
+      );
+    }
+
+    return botones;
+  }
+
+  // Pantallas angostas: cada fila se muestra como una tarjeta
+  // en lugar de una tabla comprimida.
+  Widget _listaTarjetas({
+    required List<Map<String, dynamic>> datos,
+    required String textoVacio,
+    required ScrollController scrollV,
+    required bool conInactivar,
+    required bool conAdquirir,
+    required bool conVerMas,
+  }) {
+    final decoracion = BoxDecoration(
+      color: AppColors.fondo,
+      borderRadius: BorderRadius.circular(AppTheme.radioTarjeta),
+      border: Border.all(color: AppColors.borde),
+    );
+
+    if (datos.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppTheme.paddingTarjeta),
+        decoration: decoracion,
+        child: Text(
+          textoVacio,
+          style: const TextStyle(color: AppColors.textoSuave),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 420,
+      child: Scrollbar(
+        controller: scrollV,
+        thumbVisibility: true,
+        child: ListView.separated(
+          controller: scrollV,
+          itemCount: datos.length,
+          separatorBuilder: (context, indice) => const SizedBox(height: 12),
+          itemBuilder: (context, indice) {
+            final fila = datos[indice];
+            final botones = _botonesAccion(
+              fila,
+              conInactivar: conInactivar,
+              conAdquirir: conAdquirir,
+              conVerMas: conVerMas,
+            );
+
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppTheme.paddingTarjeta),
+              decoration: decoracion,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...fila.entries.map(
+                    (e) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '${_etiqueta(e.key)}: ',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            TextSpan(text: _textoCelda(e.value)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (botones.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(spacing: 8, runSpacing: 8, children: botones),
+                  ],
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -528,6 +712,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
     required ScrollController scrollV,
     required bool conInactivar,
     required bool conAdquirir,
+    required bool conVerMas,
   }) {
     if (cargando) {
       return const SizedBox(
@@ -546,7 +731,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
               Text(
                 error,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
+                style: const TextStyle(color: AppColors.rojo),
               ),
               const SizedBox(height: 8),
               TextButton.icon(
@@ -559,6 +744,21 @@ final String baseUrl = 'http://192.168.0.103:8083';
         ),
       );
     }
+
+    // Pantallas angostas: tarjetas (sin tabla comprimida).
+    if (MediaQuery.of(context).size.width < 700) {
+      return _listaTarjetas(
+        datos: datos,
+        textoVacio: textoVacio,
+        scrollV: scrollV,
+        conInactivar: conInactivar,
+        conAdquirir: conAdquirir,
+        conVerMas: conVerMas,
+      );
+    }
+
+    // Pantallas anchas: tabla con scroll vertical y horizontal.
+    final hayAcciones = conInactivar || conAdquirir || conVerMas;
 
     // Las columnas salen de los campos que devuelve el procedimiento.
     final columnas = datos.isEmpty ? <String>[] : datos.first.keys.toList();
@@ -581,7 +781,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
             ),
           ),
         ),
-        if (conInactivar || conAdquirir)
+        if (hayAcciones)
           const DataColumn(
             label: Text(
               'Acciones',
@@ -595,54 +795,24 @@ final String baseUrl = 'http://192.168.0.103:8083';
             .map((c) => DataCell(Text(_textoCelda(fila[c]))))
             .toList();
 
-        if (conInactivar) {
-          final id = _idTransporte(fila);
-          final yaInactivo = _estaInactivo(fila);
-          final ocupado = inactivandoId != null;
-          final puedeInactivar = id != null && !yaInactivo && !ocupado;
-
-          celdas.add(
-            DataCell(
-              Tooltip(
-                message: id == null
-                    ? 'La consulta no devuelve el ID del transporte'
-                    : (yaInactivo ? 'Ya está inactivo' : 'Inactivar'),
-                child: TextButton.icon(
-                  onPressed:
-                      puedeInactivar ? () => _inactivarTransporte(fila) : null,
-                  icon: inactivandoId != null &&
-                          id != null &&
-                          inactivandoId == id.toString()
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.block, size: 18),
-                  label: const Text('Inactivar'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
-                  ),
-                ),
-              ),
-            ),
+        if (hayAcciones) {
+          final botones = _botonesAccion(
+            fila,
+            conInactivar: conInactivar,
+            conAdquirir: conAdquirir,
+            conVerMas: conVerMas,
           );
-        }
-
-        if (conAdquirir) {
-          final id = _idTransporte(fila);
 
           celdas.add(
             DataCell(
-              Tooltip(
-                message: id == null
-                    ? 'La consulta no devuelve el ID del transporte'
-                    : 'Adquirir cupos',
-                child: FilledButton.tonalIcon(
-                  onPressed: id == null ? null : () => _abrirAdquirir(fila),
-                  icon: const Icon(Icons.add_shopping_cart, size: 18),
-                  label: const Text('Adquirir'),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final boton in botones) ...[
+                    boton,
+                    const SizedBox(width: 8),
+                  ],
+                ],
               ),
             ),
           );
@@ -652,7 +822,6 @@ final String baseUrl = 'http://192.168.0.103:8083';
       }).toList();
     }
 
-    // Tabla con scroll vertical y horizontal.
     return SizedBox(
       height: 320,
       child: LayoutBuilder(
@@ -684,6 +853,31 @@ final String baseUrl = 'http://192.168.0.103:8083';
     );
   }
 
+  // Logo con fondo blanco para que se vea bien sobre cualquier fondo.
+  Widget _logo(String ruta) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(2),
+        child: Image.asset(
+          ruta,
+          height: 44,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            // Muestra en la consola el motivo real por el que no cargó.
+            debugPrint('No se pudo cargar $ruta: $error');
+            return const SizedBox(
+              height: 44,
+              width: 44,
+              child: Icon(Icons.image_not_supported, color: AppColors.textoSuave),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Mientras se valida la sesión, mostrar un indicador.
@@ -703,29 +897,69 @@ final String baseUrl = 'http://192.168.0.103:8083';
     // Contenido protegido del Servicio B.
     return Scaffold(
       appBar: AppBar(
-        title: Text('Servicio B - Usuario: ${usuarioFinal ?? ""}'),
-        backgroundColor: Colors.blue,
+        title: Text(
+          'Servicio B - Usuario: ${usuarioFinal ?? ""}',
+          overflow: TextOverflow.ellipsis,
+        ),
+        backgroundColor: AppColors.verde,
         foregroundColor: Colors.white,
-        actions: [
-          TextButton.icon(
-            onPressed: _volverAlDashboard,
-            icon: const Icon(Icons.dashboard, color: Colors.white),
-            label: const Text(
-              'Volver al Dashboard',
-              style: TextStyle(color: Colors.white),
-            ),
+        // En pantallas angostas los botones pasan a ser solo íconos.
+        actions: MediaQuery.of(context).size.width < 600
+            ? [
+                IconButton(
+                  tooltip: 'Volver al Dashboard',
+                  onPressed: _volverAlDashboard,
+                  icon: const Icon(Icons.dashboard),
+                ),
+                IconButton(
+                  tooltip: 'Cerrar Sesión',
+                  onPressed: _cerrarSesion,
+                  icon: const Icon(Icons.logout),
+                ),
+                const SizedBox(width: 8),
+              ]
+            : [
+                TextButton.icon(
+                  onPressed: _volverAlDashboard,
+                  icon: const Icon(Icons.dashboard, color: Colors.white),
+                  label: const Text(
+                    'Volver al Dashboard',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _cerrarSesion,
+                  icon: const Icon(Icons.logout, color: Colors.white),
+                  label: const Text(
+                    'Cerrar Sesión',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 16),
+              ],
+      ),
+      bottomNavigationBar: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: AppColors.borde)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              _logo('assets/logoUniversidad.jpeg'),
+              _logo('assets/logoIngenieria.jpeg'),
+              _logo('assets/logoRedComunitaria.jpeg'),
+            ],
           ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: _cerrarSesion,
-            icon: const Icon(Icons.logout, color: Colors.white),
-            label: const Text(
-              'Cerrar Sesión',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-          const SizedBox(width: 16),
-        ],
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -733,24 +967,6 @@ final String baseUrl = 'http://192.168.0.103:8083';
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.verified_user,
-                size: 80,
-                color: Colors.green,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Sesión autenticada correctamente',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text('Usuario: ${usuarioFinal ?? ""}'),
-              const SizedBox(height: 8),
-              const Text('El Servicio B está protegido mediante sesión.'),
-              const SizedBox(height: 28),
               Wrap(
                 spacing: 16,
                 runSpacing: 16,
@@ -794,6 +1010,7 @@ final String baseUrl = 'http://192.168.0.103:8083';
                 scrollH: _scrollH,
                 scrollV: _scrollV,
                 conInactivar: true,
+                conVerMas: true,
               ),
               const SizedBox(height: 24),
               _construirTarjetaTabla(
@@ -945,14 +1162,14 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
                   'No fue posible consultar los datos '
                       '(código ${respuesta.statusCode})')
               .toString(),
-          Colors.red,
+          AppColors.rojo,
         );
       }
     } catch (error) {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -994,19 +1211,19 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
       if (respuesta.statusCode == 201) {
         final mensaje = datos['mensaje'] ?? 'Persona registrada con éxito';
         Navigator.of(context).pop();
-        _mostrarMensaje('$mensaje. ID: ${datos['id']}', Colors.green);
+        _mostrarMensaje('$mensaje. ID: ${datos['id']}', AppColors.verde);
       } else {
         final mensaje = datos['error'] ??
             datos['mensaje'] ??
             'No fue posible registrar la persona '
                 '(código ${respuesta.statusCode})';
-        _mostrarMensaje(mensaje.toString(), Colors.red);
+        _mostrarMensaje(mensaje.toString(), AppColors.rojo);
       }
     } catch (error) {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -1047,19 +1264,19 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
         final mensaje =
             datos['mensaje'] ?? 'Número de contacto actualizado con éxito';
         Navigator.of(context).pop();
-        _mostrarMensaje(mensaje.toString(), Colors.green);
+        _mostrarMensaje(mensaje.toString(), AppColors.verde);
       } else {
         final mensaje = datos['error'] ??
             datos['mensaje'] ??
             'No fue posible actualizar el número '
                 '(código ${respuesta.statusCode})';
-        _mostrarMensaje(mensaje.toString(), Colors.red);
+        _mostrarMensaje(mensaje.toString(), AppColors.rojo);
       }
     } catch (error) {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -1094,7 +1311,7 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
         decoration: InputDecoration(
           labelText: etiqueta,
           prefixIcon: Icon(icono),
-          border: const OutlineInputBorder(),
+          border: AppTheme.bordeCampo,
           filled: soloLectura,
         ),
         validator: validador,
@@ -1105,9 +1322,10 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      shape: AppTheme.formaTarjeta,
       title: Row(
         children: [
-          const Icon(Icons.person_add_alt_1, color: Colors.blue),
+          const Icon(Icons.person_add_alt_1, color: AppColors.verde),
           const SizedBox(width: 12),
           Expanded(
             child: Text(_existe ? 'Mis datos' : 'Registrarse'),
@@ -1115,7 +1333,7 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
         ],
       ),
       content: SizedBox(
-        width: 450,
+        width: AppTheme.anchoDialogo(context, 450),
         child: _cargando
             ? const SizedBox(
                 height: 120,
@@ -1133,7 +1351,7 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
                           child: Text(
                             'Ya estás registrado. Solo puedes actualizar '
                             'tu número de contacto.',
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(color: AppColors.textoSuave),
                           ),
                         ),
                       _campoTexto(
@@ -1182,7 +1400,7 @@ class _RegistroPersonaDialogState extends State<RegistroPersonaDialog> {
                         decoration: const InputDecoration(
                           labelText: 'Usuario',
                           prefixIcon: Icon(Icons.account_circle),
-                          border: OutlineInputBorder(),
+                          border: AppTheme.bordeCampo,
                           helperText:
                               'Se asigna automáticamente desde tu sesión',
                         ),
@@ -1414,19 +1632,19 @@ class _RegistroTransporteDialogState extends State<RegistroTransporteDialog> {
       if (respuesta.statusCode == 201) {
         final mensaje = datos['mensaje'] ?? 'Transporte registrado con éxito';
         Navigator.of(context).pop(true);
-        _mostrarMensaje(mensaje.toString(), Colors.green);
+        _mostrarMensaje(mensaje.toString(), AppColors.verde);
       } else {
         final mensaje = datos['error'] ??
             datos['mensaje'] ??
             'No fue posible registrar el transporte '
                 '(código ${respuesta.statusCode})';
-        _mostrarMensaje(mensaje.toString(), Colors.red);
+        _mostrarMensaje(mensaje.toString(), AppColors.rojo);
       }
     } catch (error) {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -1459,7 +1677,7 @@ class _RegistroTransporteDialogState extends State<RegistroTransporteDialog> {
         decoration: InputDecoration(
           labelText: etiqueta,
           prefixIcon: Icon(icono),
-          border: const OutlineInputBorder(),
+          border: AppTheme.bordeCampo,
         ),
         validator: validador,
       ),
@@ -1481,7 +1699,7 @@ class _RegistroTransporteDialogState extends State<RegistroTransporteDialog> {
           labelText: etiqueta,
           prefixIcon: const Icon(Icons.event),
           suffixIcon: const Icon(Icons.access_time),
-          border: const OutlineInputBorder(),
+          border: AppTheme.bordeCampo,
           helperText: 'Toca para elegir fecha y hora',
         ),
         validator: (v) => _obligatorio(v, etiqueta),
@@ -1498,7 +1716,7 @@ class _RegistroTransporteDialogState extends State<RegistroTransporteDialog> {
         decoration: InputDecoration(
           labelText: 'Tipo de transporte',
           prefixIcon: const Icon(Icons.directions_bus),
-          border: const OutlineInputBorder(),
+          border: AppTheme.bordeCampo,
           errorText: _errorTipos
               ? 'No se pudieron cargar los tipos de transporte'
               : null,
@@ -1517,15 +1735,16 @@ class _RegistroTransporteDialogState extends State<RegistroTransporteDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      shape: AppTheme.formaTarjeta,
       title: const Row(
         children: [
-          Icon(Icons.directions_bus, color: Colors.blue),
+          Icon(Icons.directions_bus, color: AppColors.verde),
           SizedBox(width: 12),
           Expanded(child: Text('Registrar transporte')),
         ],
       ),
       content: SizedBox(
-        width: 450,
+        width: AppTheme.anchoDialogo(context, 450),
         child: _cargandoTipos
             ? const SizedBox(
                 height: 120,
@@ -1580,7 +1799,7 @@ class _RegistroTransporteDialogState extends State<RegistroTransporteDialog> {
                         decoration: const InputDecoration(
                           labelText: 'Usuario',
                           prefixIcon: Icon(Icons.account_circle),
-                          border: OutlineInputBorder(),
+                          border: AppTheme.bordeCampo,
                           helperText:
                               'Se asigna automáticamente desde tu sesión',
                         ),
@@ -1755,14 +1974,14 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
                   'No fue posible consultar los cupos '
                       '(código ${respuesta.statusCode})')
               .toString(),
-          Colors.red,
+          AppColors.rojo,
         );
       }
     } catch (error) {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -1825,7 +2044,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -1846,7 +2065,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
     if (nuevos == _cuposAnteriores) {
       _mostrarMensaje(
         'Los cupos nuevos son iguales a los que ya tienes',
-        Colors.orange,
+        AppColors.azul,
       );
       return;
     }
@@ -1878,7 +2097,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
       if (!mounted) return;
       _mostrarMensaje(
         'No se pudo conectar con el servidor: $error',
-        Colors.red,
+        AppColors.rojo,
       );
     } finally {
       if (mounted) {
@@ -1902,12 +2121,12 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
     if (respuesta.statusCode == exito) {
       final mensaje = datos['mensaje'] ?? mensajeExito;
       Navigator.of(context).pop(true);
-      _mostrarMensaje(mensaje.toString(), Colors.green);
+      _mostrarMensaje(mensaje.toString(), AppColors.verde);
     } else {
       final mensaje = datos['error'] ??
           datos['mensaje'] ??
           '$mensajeError (código ${respuesta.statusCode})';
-      _mostrarMensaje(mensaje.toString(), Colors.red);
+      _mostrarMensaje(mensaje.toString(), AppColors.rojo);
     }
   }
 
@@ -1920,7 +2139,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
       padding: const EdgeInsets.all(12),
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppColors.borde),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1967,9 +2186,10 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      shape: AppTheme.formaTarjeta,
       title: Row(
         children: [
-          const Icon(Icons.add_shopping_cart, color: Colors.blue),
+          const Icon(Icons.add_shopping_cart, color: AppColors.verde),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1979,7 +2199,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
         ],
       ),
       content: SizedBox(
-        width: 450,
+        width: AppTheme.anchoDialogo(context, 450),
         child: _cargando
             ? const SizedBox(
                 height: 120,
@@ -1997,7 +2217,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
                         padding: const EdgeInsets.only(bottom: 16),
                         child: Text(
                           _estado,
-                          style: const TextStyle(color: Colors.grey),
+                          style: const TextStyle(color: AppColors.textoSuave),
                         ),
                       ),
                       Padding(
@@ -2014,7 +2234,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
                                 ? 'Cupos nuevos'
                                 : 'Cupos a adquirir',
                             prefixIcon: const Icon(Icons.people),
-                            border: const OutlineInputBorder(),
+                            border: AppTheme.bordeCampo,
                             helperText: _tieneReserva
                                 ? 'Usa 0 para liberar tus cupos'
                                 : null,
@@ -2030,7 +2250,7 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
                         decoration: const InputDecoration(
                           labelText: 'Usuario',
                           prefixIcon: Icon(Icons.account_circle),
-                          border: OutlineInputBorder(),
+                          border: AppTheme.bordeCampo,
                           helperText:
                               'Se asigna automáticamente desde tu sesión',
                         ),
@@ -2076,6 +2296,223 @@ class _AdquirirTransporteDialogState extends State<AdquirirTransporteDialog> {
           label: Text(
             _guardando && _tieneReserva ? 'Actualizando...' : 'Actualizar',
           ),
+        ),
+      ],
+    );
+  }
+}
+
+
+// ============================================
+// PASAJEROS DE UN TRANSPORTE
+// GET /api/transportes/:id/pasajeros
+// ============================================
+class PasajerosTransporteDialog extends StatefulWidget {
+  final String baseUrl;
+  final dynamic transporteId;
+  final String Function(String) etiqueta;
+  final String Function(dynamic) textoCelda;
+
+  const PasajerosTransporteDialog({
+    super.key,
+    required this.baseUrl,
+    required this.transporteId,
+    required this.etiqueta,
+    required this.textoCelda,
+  });
+
+  @override
+  State<PasajerosTransporteDialog> createState() =>
+      _PasajerosTransporteDialogState();
+}
+
+class _PasajerosTransporteDialogState extends State<PasajerosTransporteDialog> {
+  List<Map<String, dynamic>> _pasajeros = [];
+  bool _cargando = true;
+  String? _error;
+
+  final ScrollController _scrollH = ScrollController();
+  final ScrollController _scrollV = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPasajeros();
+  }
+
+  @override
+  void dispose() {
+    _scrollH.dispose();
+    _scrollV.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cargarPasajeros() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+
+    try {
+      final respuesta = await http.get(
+        Uri.parse(
+          '${widget.baseUrl}/api/transportes/'
+          '${Uri.encodeComponent(widget.transporteId.toString())}'
+          '/pasajeros',
+        ),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (!mounted) return;
+
+      if (respuesta.statusCode == 200) {
+        final lista = jsonDecode(respuesta.body) as List<dynamic>;
+        setState(() {
+          _pasajeros =
+              lista.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        });
+      } else {
+        String mensaje = 'No fue posible consultar los pasajeros '
+            '(código ${respuesta.statusCode})';
+        try {
+          final datos = jsonDecode(respuesta.body) as Map<String, dynamic>;
+          mensaje = (datos['error'] ?? mensaje).toString();
+        } catch (_) {}
+        setState(() => _error = mensaje);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'No se pudo conectar con el servidor: $error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _cargando = false);
+      }
+    }
+  }
+
+  Widget _contenido(double ancho) {
+    if (_cargando) {
+      return const SizedBox(
+        height: 200,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return SizedBox(
+        height: 200,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.rojo),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _cargarPasajeros,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Las columnas salen de los campos que devuelve el procedimiento.
+    final columnas =
+        _pasajeros.isEmpty ? <String>[] : _pasajeros.first.keys.toList();
+
+    final List<DataColumn> columnasTabla;
+    final List<DataRow> filasTabla;
+
+    if (_pasajeros.isEmpty) {
+      columnasTabla = const [DataColumn(label: Text('Pasajeros'))];
+      filasTabla = const [
+        DataRow(
+          cells: [DataCell(Text('Este transporte aún no tiene pasajeros'))],
+        ),
+      ];
+    } else {
+      columnasTabla = columnas
+          .map(
+            (c) => DataColumn(
+              label: Text(
+                widget.etiqueta(c),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          )
+          .toList();
+
+      filasTabla = _pasajeros
+          .map(
+            (fila) => DataRow(
+              cells: columnas
+                  .map((c) => DataCell(Text(widget.textoCelda(fila[c]))))
+                  .toList(),
+            ),
+          )
+          .toList();
+    }
+
+    // Tabla con scroll vertical y horizontal.
+    return SizedBox(
+      height: 320,
+      child: Scrollbar(
+        controller: _scrollH,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _scrollH,
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: ancho),
+            child: Scrollbar(
+              controller: _scrollV,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _scrollV,
+                child: DataTable(
+                  columns: columnasTabla,
+                  rows: filasTabla,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pantalla = MediaQuery.of(context).size.width;
+    final ancho = pantalla > 796 ? 700.0 : pantalla - 96;
+
+    return AlertDialog(
+      shape: AppTheme.formaTarjeta,
+      title: Row(
+        children: [
+          const Icon(Icons.groups, color: AppColors.verde),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Pasajeros del transporte ${widget.transporteId}'),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: ancho,
+        child: _contenido(ancho),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cerrar'),
         ),
       ],
     );
