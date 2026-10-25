@@ -35,9 +35,9 @@ class ServicioBScreen extends StatefulWidget {
 
 class _ServicioBScreenState extends State<ServicioBScreen> {
   // URLs del Servicio A
-  final String loginUrl = 'http://127.0.0.1:5500/login_dashboard.html';
-  final String dashboardUrl = 'http://127.0.0.1:5500/dashboard.html';
-  final String baseUrl = 'http://127.0.0.1:8083';
+final String loginUrl = 'http://192.168.0.103:8081/index.html';
+final String dashboardUrl = 'http://192.168.0.103:8081/dashboard.html';
+final String baseUrl = 'http://192.168.0.103:8083';
 
   String? usuarioFinal;
   String? tokenFinal;
