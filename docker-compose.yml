@@ -1,7 +1,7 @@
 services:
   backend-viajes:
     build: .
-    container_name: servicio_prueba
+    container_name: servicio_rastro_rural
     restart: always
     ports:
       - "8083:8083"   # <--- Cambia el puerto externo a 3005

@@ -2,6 +2,8 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -13,10 +15,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Configuración de la conexión a MySQL
 const pool = mysql.createPool({
     host: '192.168.0.103',
-    port: 3309,
+    port: 3310,
     user: 'root',
     password: 'admin',
-    database: 'terminal',
+    database: 'rastro',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -29,543 +31,343 @@ const esTexto = (v) => typeof v === 'string' && v.trim().length > 0;
 const opcional = (v) => (typeof v === 'string' ? v.trim() || null : null);
 
 // ============================================
-// ENDPOINT: REGISTRAR PERSONA
-// POST /api/personas
+// ENDPOINT: Obtener solo los nombres de las especies
 // ============================================
-app.post('/api/personas', async (req, res) => {
+app.get('/api/especies/nombres', async (req, res) => {
     try {
-        const {
-            primer_nombre,
-            segundo_nombre,
-            primer_apellido,
-            segundo_apellido,
-            numero_contacto,
-            usuario
-        } = req.body || {};
-
-        // Obligatorios: primer_nombre, primer_apellido, numero_contacto, usuario
-        if (
-            !esTexto(primer_nombre) ||
-            !esTexto(primer_apellido) ||
-            !esTexto(numero_contacto) ||
-            !esTexto(usuario)
-        ) {
-            return res.status(400).json({
-                error: 'Los campos primer_nombre, primer_apellido, numero_contacto y usuario son obligatorios'
-            });
-        }
-
-        // Longitudes máximas según la tabla (VARCHAR 50 y 20)
-        if (
-            primer_nombre.trim().length > 50 ||
-            primer_apellido.trim().length > 50 ||
-            usuario.trim().length > 50 ||
-            numero_contacto.trim().length > 20 ||
-            (opcional(segundo_nombre) || '').length > 50 ||
-            (opcional(segundo_apellido) || '').length > 50
-        ) {
-            return res.status(400).json({
-                error: 'Algún campo supera la longitud permitida (50 caracteres; número de contacto 20)'
-            });
-        }
-
-        const [result] = await pool.execute(
-            `INSERT INTO persona (
-                primer_nombre,
-                segundo_nombre,
-                primer_apellido,
-                segundo_apellido,
-                numero_contacto,
-                usuario
-            ) VALUES (?, ?, ?, ?, ?, ?)`,
-            [
-                primer_nombre.trim(),
-                opcional(segundo_nombre),
-                primer_apellido.trim(),
-                opcional(segundo_apellido),
-                numero_contacto.trim(),
-                usuario.trim()
-            ]
-        );
-
-        return res.status(201).json({
-            mensaje: 'Persona registrada con éxito',
-            id: result.insertId
-        });
-
-    } catch (error) {
-        console.error('Error al registrar la persona:', error);
-
-        // usuario es UNIQUE
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({
-                error: 'El nombre de usuario ya está registrado'
-            });
-        }
-
-        return res.status(500).json({
-            error: 'Error interno al registrar la persona'
-        });
-    }
-});
-
-// ============================================
-// ENDPOINT: CONSULTAR PERSONA POR USUARIO
-// GET /api/personas/:usuario
-// ============================================
-app.get('/api/personas/:usuario', async (req, res) => {
-    try {
-        const { usuario } = req.params;
-
-        if (!esTexto(usuario)) {
-            return res.status(400).json({
-                error: 'El nombre de usuario es obligatorio'
-            });
-        }
-
-        const [rows] = await pool.execute(
-            `SELECT
-                primer_nombre,
-                segundo_nombre,
-                primer_apellido,
-                segundo_apellido,
-                numero_contacto,
-                usuario
-            FROM persona
-            WHERE usuario = ?`,
-            [usuario.trim()]
-        );
-
-        if (rows.length === 0) {
-            return res.status(404).json({
-                error: 'No existe una persona registrada con ese usuario'
-            });
-        }
-
-        return res.status(200).json(rows[0]);
-
-    } catch (error) {
-        console.error('Error al consultar la persona:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al consultar la persona'
-        });
-    }
-});
-
-// ============================================
-// ENDPOINT: ACTUALIZAR NÚMERO DE CONTACTO POR USUARIO
-// PATCH /api/personas/usuario/:usuario/contacto
-// ============================================
-app.patch('/api/personas/usuario/:usuario/contacto', async (req, res) => {
-    try {
-        const { usuario } = req.params;
-        const { numero_contacto } = req.body;
-
-        // Validar parámetro de la URL
-        if (!usuario || typeof usuario !== 'string' || !usuario.trim()) {
-            return res.status(400).json({
-                error: 'El nombre de usuario es obligatorio'
-            });
-        }
-
-        // Validar campo obligatorio en el body
-        if (!numero_contacto || typeof numero_contacto !== 'string' || !numero_contacto.trim()) {
-            return res.status(400).json({
-                error: 'El campo numero_contacto es obligatorio'
-            });
-        }
-
-        const query = `
-            UPDATE persona
-            SET numero_contacto = ?
-            WHERE usuario = ?
-        `;
-
-        const [result] = await pool.execute(query, [
-            numero_contacto.trim(),
-            usuario.trim()
-        ]);
-
-        // Si no se afectó ninguna fila, el usuario no existe
-        if (result.affectedRows === 0) {
-            return res.status(404).json({
-                error: 'No existe una persona registrada con ese usuario'
-            });
-        }
-
-        return res.status(200).json({
-            mensaje: 'Número de contacto actualizado con éxito'
-        });
-
-    } catch (error) {
-        console.error('Error al actualizar el número de contacto:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al actualizar el número de contacto'
-        });
-    }
-});
-
-// ============================================
-// ENDPOINT: OBTENER SOLO NOMBRES DE TIPOS DE TRANSPORTE
-// GET /api/tipos-transporte/nombres
-// ============================================
-app.get('/api/tipos-transporte/nombres', async (req, res) => {
-    try {
-        const query = `
-            SELECT nombre 
-            FROM tipo_transporte 
-            ORDER BY nombre ASC
-        `;
-
+        const query = 'SELECT nombre FROM especie ORDER BY nombre ASC';
         const [rows] = await pool.execute(query);
 
-        return res.status(200).json(rows);
+        // Transformamos el resultado para devolver directamente un array plano de strings ['Perro', 'Gato', ...]
+        const nombres = rows.map(especie => especie.nombre);
+
+        return res.status(200).json(nombres);
 
     } catch (error) {
-        console.error('Error al consultar los nombres de tipos de transporte:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al consultar los tipos de transporte'
-        });
+        console.error('Error al obtener los nombres de las especies:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al consultar las especies.' });
     }
 });
 
 // ============================================
-// ENDPOINT: REGISTRAR TRANSPORTE
-// POST /api/transportes
-// Ejecuta el procedimiento almacenado registrar_transporte
+// ENDPOINT: Subir foto (POST /api/upload)
+// Guarda la imagen en public/uploads y devuelve su ruta
 // ============================================
-app.post('/api/transportes', async (req, res) => {
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // máx. 5 MB
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const permitido = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+        cb(permitido ? null : new Error('Solo se permiten imágenes JPG, PNG o WEBP.'), permitido);
+    }
+});
+
+app.post('/api/upload', (req, res) => {
+    upload.single('foto')(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se recibió ninguna imagen.' });
+        }
+        return res.status(201).json({ url: `/uploads/${req.file.filename}` });
+    });
+});
+
+// ============================================
+// ENDPOINT: Registrar Reporte mediante Stored Procedure
+// ============================================
+app.post('/api/reportes', async (req, res) => {
     try {
         const {
-            nombre_tipo_transporte,
             nombre_usuario,
-            fecha_hora_salida_comunidad,
-            punto_encuentro_salida_comunidad,
-            fecha_hora_salida_ciudad,
-            punto_encuentro_salida_ciudad,
-            capacidad
+            nombre_animal,
+            nombre_especie,
+            descripcion_animal,
+            descripcion_lugar,
+            fecha_perdio,
+            url_foto
         } = req.body;
 
-        // Validación básica de campos requeridos
-        if (
-            !nombre_tipo_transporte ||
-            !nombre_usuario ||
-            !fecha_hora_salida_comunidad ||
-            !punto_encuentro_salida_comunidad ||
-            !fecha_hora_salida_ciudad ||
-            !punto_encuentro_salida_ciudad ||
-            capacidad === undefined || capacidad === null
-        ) {
-            return res.status(400).json({
-                error: 'Error: Todos los campos son obligatorios'
+        // Validaciones básicas de campos obligatorios
+        if (!esTexto(nombre_usuario) || !esTexto(nombre_animal) || !esTexto(nombre_especie) || 
+            !esTexto(descripcion_animal) || !esTexto(descripcion_lugar) || !esTexto(fecha_perdio) || !esTexto(url_foto)) {
+            return res.status(400).json({ 
+                error: 'Todos los campos son obligatorios para registrar el reporte.' 
             });
         }
 
-        // Llamada al procedimiento almacenado pasando parámetros y la variable @mensaje para el OUT
-        const queryCall = `
-            CALL registrar_transporte(
-                ?, ?, ?, ?, ?, ?, ?, @mensaje
-            )
-        `;
-
-        await pool.query(queryCall, [
-            nombre_tipo_transporte.trim(),
+        // Llamada al Stored Procedure: 
+        // Pasamos 7 parámetros de entrada (?) y declaramos uno de salida (@mensaje)
+        const query = 'CALL registrar_reporte(?, ?, ?, ?, ?, ?, ?, @mensaje)';
+        const values = [
             nombre_usuario.trim(),
-            fecha_hora_salida_comunidad,
-            punto_encuentro_salida_comunidad.trim(),
-            fecha_hora_salida_ciudad,
-            punto_encuentro_salida_ciudad.trim(),
-            Number(capacidad)
-        ]);
+            nombre_animal.trim(),
+            nombre_especie.trim(),
+            descripcion_animal.trim(),
+            descripcion_lugar.trim(),
+            fecha_perdio.trim(),
+            url_foto.trim()
+        ];
 
-        // Obtener el valor de la variable de salida @mensaje
-        const [resultado] = await pool.query('SELECT @mensaje AS mensaje');
-        const mensaje = resultado[0]?.mensaje || '';
+        // Ejecutamos la llamada al SP
+        await pool.execute(query, values);
 
-        // Comprobar la respuesta del procedimiento almacenado
-        if (mensaje.startsWith('Éxito')) {
-            return res.status(201).json({
-                mensaje
-            });
-        } else {
-            return res.status(400).json({
-                error: mensaje || 'No fue posible registrar el transporte'
-            });
+        // Recuperamos el valor de la variable de salida (@mensaje) definida en MySQL
+        const [resultMensaje] = await pool.execute('SELECT @mensaje AS mensaje');
+        const mensajeSp = resultMensaje[0].mensaje;
+
+        // Verificamos si el procedimiento retornó un mensaje de error controlado
+        if (mensajeSp && mensajeSp.startsWith('Error:')) {
+            return res.status(400).json({ error: mensajeSp });
         }
 
-    } catch (error) {
-        console.error('Error al registrar el transporte:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al registrar el transporte'
+        return res.status(201).json({
+            mensaje: mensajeSp || 'Se registró el reporte con éxito.'
         });
+
+    } catch (error) {
+        console.error('Error al registrar el reporte:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al procesar el reporte.' });
     }
 });
 
 // ============================================
-// ENDPOINT: CONSULTAR TRANSPORTES DE UN USUARIO
-// GET /api/transportes/usuario/:usuario
-// Ejecuta el procedimiento almacenado consultar_mis_transportes
+// ENDPOINT: Ver mis reportes mediante Stored Procedure (GET)
 // ============================================
-app.get('/api/transportes/usuario/:usuario', async (req, res) => {
+app.get('/api/reportes/usuario/:nombre_usuario', async (req, res) => {
     try {
-        const { usuario } = req.params;
+        const { nombre_usuario } = req.params;
 
-        // Validar que el parámetro usuario no esté vacío
-        if (!usuario || typeof usuario !== 'string' || !usuario.trim()) {
-            return res.status(400).json({
-                error: 'El nombre de usuario es obligatorio'
+        // Validar que el parámetro no esté vacío
+        if (!esTexto(nombre_usuario)) {
+            return res.status(400).json({ 
+                error: 'El nombre de usuario es obligatorio en la ruta.' 
             });
         }
 
-        // Llamar al procedimiento almacenado
-        const queryCall = 'CALL consultar_mis_transportes(?)';
-        const [resultado] = await pool.query(queryCall, [usuario.trim()]);
+        // Llamada al Stored Procedure
+        const query = 'CALL mirar_mis_reportes(?)';
+        const [rows] = await pool.execute(query, [nombre_usuario.trim()]);
 
-        // En mysql2, el primer elemento (resultado[0]) contiene las filas devueltas por el SELECT del procedimiento
-        const misTransportes = resultado[0] || [];
+        // MySQL con `mysql2/promise` devuelve los resultados del SP en el primer índice del arreglo (`rows[0]`)
+        const reportes = rows[0];
 
-        return res.status(200).json(misTransportes);
+        return res.status(200).json({
+            usuario: nombre_usuario.trim(),
+            reportes: reportes
+        });
 
     } catch (error) {
-        console.error('Error al consultar los transportes del usuario:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al consultar los transportes'
-        });
+        console.error('Error al consultar los reportes del usuario:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al consultar los reportes.' });
     }
 });
 
 // ============================================
-// ENDPOINT: INACTIVAR UN TRANSPORTE
-// PATCH /api/transportes/:id/inactivar
+// ENDPOINT: Ver reportes activos de otros usuarios (GET)
 // ============================================
-app.patch('/api/transportes/:id/inactivar', async (req, res) => {
+app.get('/api/reportes', async (req, res) => {
+    try {
+        const { usuario } = req.query;
+
+        // Validar que se envíe el usuario que está consultando
+        if (!esTexto(usuario)) {
+            return res.status(400).json({ 
+                error: 'El parámetro "usuario" es obligatorio en la consulta (ej. /api/reportes?usuario=cgomez).' 
+            });
+        }
+
+        // Llamada al Stored Procedure pasando el parámetro de entrada
+        const query = 'CALL mirar_reportes(?)';
+        const [rows] = await pool.execute(query, [usuario.trim()]);
+
+        const reportes = rows[0];
+
+        return res.status(200).json({
+            total_reportes: reportes.length,
+            reportes: reportes
+        });
+
+    } catch (error) {
+        console.error('Error al consultar los reportes:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al consultar los reportes.' });
+    }
+});
+
+// ============================================
+// ENDPOINT: Registrar Avistamiento mediante Stored Procedure (POST)
+// ============================================
+app.post('/api/avistamientos', async (req, res) => {
+    try {
+        const {
+            nombre_usuario,
+            descripcion,
+            id_reporte,
+            fecha_encontro
+        } = req.body;
+
+        // Validaciones básicas de campos obligatorios
+        if (!esTexto(nombre_usuario) || !esTexto(descripcion) || !id_reporte || !esTexto(fecha_encontro)) {
+            return res.status(400).json({ 
+                error: 'Los campos nombre_usuario, descripcion, id_reporte y fecha_encontro son obligatorios.' 
+            });
+        }
+
+        // Llamada al Stored Procedure:
+        // Pasamos 4 parámetros de entrada (?) y declaramos uno de salida (@mensaje)
+        const query = 'CALL registrar_avistamiento(?, ?, ?, ?, @mensaje)';
+        const values = [
+            nombre_usuario.trim(),
+            descripcion.trim(),
+            id_reporte,
+            fecha_encontro.trim()
+        ];
+
+        // Ejecutamos la llamada al SP
+        await pool.execute(query, values);
+
+        // Recuperamos el valor de la variable de salida (@mensaje) definida en MySQL
+        const [resultMensaje] = await pool.execute('SELECT @mensaje AS mensaje');
+        const mensajeSp = resultMensaje[0].mensaje;
+
+        // Verificamos si el procedimiento retornó un mensaje de error controlado
+        if (mensajeSp && mensajeSp.startsWith('Error:')) {
+            return res.status(400).json({ error: mensajeSp });
+        }
+
+        return res.status(201).json({
+            mensaje: mensajeSp || 'Se registró el avistamiento con éxito.'
+        });
+
+    } catch (error) {
+        console.error('Error al registrar el avistamiento:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al procesar el avistamiento.' });
+    }
+});
+
+// ============================================
+// ENDPOINT: Consultar reporte específico por ID (GET)
+// ============================================
+app.get('/api/reportes/:id/detalle', async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Validar que el ID sea un número válido
+        // Validar que el ID sea numérico
         if (!id || isNaN(id)) {
-            return res.status(400).json({
-                error: 'El ID del transporte debe ser un número válido'
+            return res.status(400).json({ 
+                error: 'El ID del reporte es obligatorio y debe ser un número válido.' 
+            });
+        }
+
+        // Llamada al Stored Procedure
+        const query = 'CALL consultar_mi_reporte(?)';
+        const [rows] = await pool.execute(query, [id]);
+
+        const resultados = rows[0];
+
+        // Si no existe el reporte o no tiene avistamientos, de igual forma validamos si trajo filas
+        if (!resultados || resultados.length === 0) {
+            return res.status(404).json({ error: 'Reporte no encontrado.' });
+        }
+
+        return res.status(200).json({
+            id_reporte: id,
+            total_avistamientos: resultados.length,
+            avistamientos: resultados
+        });
+
+    } catch (error) {
+        console.error('Error al consultar el detalle del reporte:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al consultar el reporte.' });
+    }
+});
+
+// ============================================
+// ENDPOINT: Cambiar el estado de un reporte a 'cancelado' (PATCH)
+// ============================================
+app.patch('/api/reportes/:id/cancelar', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Validar que el ID sea numérico
+        if (!id || isNaN(id)) {
+            return res.status(400).json({ 
+                error: 'El ID del reporte es obligatorio y debe ser un número válido.' 
             });
         }
 
         const query = `
-            UPDATE transporte
-            SET estado = 'inactivo'
+            UPDATE reporte 
+            SET estado_reporte = 'cancelado' 
             WHERE id = ?
         `;
 
         const [result] = await pool.execute(query, [id]);
 
-        // Si no afectó ninguna fila, el ID no existe en la BD
+        // Verificar si el reporte existe en la base de datos
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                error: 'No se encontró un transporte con ese ID'
-            });
+            return res.status(404).json({ error: 'Reporte no encontrado.' });
         }
 
         return res.status(200).json({
-            mensaje: 'Transporte inactivado con éxito'
+            mensaje: 'El estado del reporte ha sido actualizado a cancelado con éxito.'
         });
 
     } catch (error) {
-        console.error('Error al inactivar el transporte:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al inactivar el transporte'
-        });
+        console.error('Error al cancelar el reporte:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al procesar la solicitud.' });
     }
 });
 
 // ============================================
-// ENDPOINT: CONSULTAR TRANSPORTES ACTIVOS (EXCLUYENDO AL USUARIO ACTUAL)
-// GET /api/transportes/disponibles/:usuario
-// Ejecuta el procedimiento almacenado consultar_transportes
+// ENDPOINT: Cambiar el estado de un reporte a 'encontrado' (PATCH)
 // ============================================
-app.get('/api/transportes/disponibles/:usuario', async (req, res) => {
-    try {
-        const { usuario } = req.params;
-
-        // Validar que el parámetro usuario esté presente
-        if (!usuario || typeof usuario !== 'string' || !usuario.trim()) {
-            return res.status(400).json({
-                error: 'El nombre de usuario es obligatorio'
-            });
-        }
-
-        // Llamar al procedimiento almacenado pasando el nombre de usuario
-        const queryCall = 'CALL consultar_transportes(?)';
-        const [resultado] = await pool.query(queryCall, [usuario.trim()]);
-
-        // Extraer los resultados de la primera posición del array retornado por mysql2
-        const transportesDisponibles = resultado[0] || [];
-
-        return res.status(200).json(transportesDisponibles);
-
-    } catch (error) {
-        console.error('Error al consultar los transportes disponibles:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al consultar los transportes'
-        });
-    }
-});
-
-
-app.post('/api/transportes/adquirir', async (req, res) => {
-    try {
-        const { transporte_id, nombre_usuario, capacidad } = req.body;
-
-        if (!transporte_id || !nombre_usuario || !capacidad) {
-            return res.status(400).json({
-                error: 'Los campos transporte_id, nombre_usuario y capacidad son obligatorios'
-            });
-        }
-
-        const queryCall = 'CALL adquirir_transporte(?, ?, ?, @mensaje)';
-        await pool.query(queryCall, [Number(transporte_id), nombre_usuario.trim(), Number(capacidad)]);
-
-        const [resultado] = await pool.query('SELECT @mensaje AS mensaje');
-        const mensaje = resultado[0]?.mensaje || '';
-
-        if (mensaje.startsWith('Éxito')) {
-            return res.status(200).json({ mensaje });
-        } else {
-            return res.status(400).json({ error: mensaje });
-        }
-    } catch (error) {
-        console.error('Error al adquirir transporte:', error);
-        return res.status(500).json({ error: 'Error interno al adquirir el transporte' });
-    }
-});
-
-// ============================================
-// ENDPOINT: ACTUALIZAR O LIBERAR CUPOS DE UN TRANSPORTE
-// PATCH /api/transportes/actualizar-cupos
-// ============================================
-app.patch('/api/transportes/actualizar-cupos', async (req, res) => {
-    try {
-        const { transporte_id, nombre_usuario, cupos_anteriores, cupos_nuevos } = req.body;
-
-        if (
-            !transporte_id ||
-            !nombre_usuario ||
-            cupos_anteriores === undefined ||
-            cupos_nuevos === undefined
-        ) {
-            return res.status(400).json({
-                error: 'Los campos transporte_id, nombre_usuario, cupos_anteriores y cupos_nuevos son obligatorios'
-            });
-        }
-
-        const queryCall = 'CALL actualizar_cupos_transporte(?, ?, ?, ?, @mensaje)';
-        await pool.query(queryCall, [
-            Number(transporte_id),
-            nombre_usuario.trim(),
-            Number(cupos_anteriores),
-            Number(cupos_nuevos)
-        ]);
-
-        const [resultado] = await pool.query('SELECT @mensaje AS mensaje');
-        const mensaje = resultado[0]?.mensaje || '';
-
-        if (mensaje.startsWith('Éxito')) {
-            return res.status(200).json({ mensaje });
-        } else {
-            return res.status(400).json({ error: mensaje });
-        }
-    } catch (error) {
-        console.error('Error al actualizar cupos:', error);
-        return res.status(500).json({ error: 'Error interno al actualizar cupos' });
-    }
-});
-
-// ============================================
-// ENDPOINT: CONSULTAR CUPOS DE UN USUARIO EN UN TRANSPORTE
-// GET /api/transportes/:transporte_id/cupos/:usuario
-// Ejecuta el procedimiento almacenado mirar_cupos_transporte
-// ============================================
-app.get('/api/transportes/:transporte_id/cupos/:usuario', async (req, res) => {
-    try {
-        const { transporte_id, usuario } = req.params;
-
-        // Validar el ID del transporte
-        if (!transporte_id || isNaN(transporte_id)) {
-            return res.status(400).json({
-                error: 'El ID del transporte debe ser un número válido'
-            });
-        }
-
-        // Validar el nombre de usuario
-        if (!usuario || typeof usuario !== 'string' || !usuario.trim()) {
-            return res.status(400).json({
-                error: 'El nombre de usuario es obligatorio'
-            });
-        }
-
-        // Llamada al procedimiento almacenado
-        const queryCall = 'CALL mirar_cupos_transporte(?, ?)';
-        const [resultado] = await pool.query(queryCall, [
-            Number(transporte_id),
-            usuario.trim()
-        ]);
-
-        const datosCupo = resultado[0] || [];
-
-        // Si la consulta no devuelve filas, significa que el usuario no tiene reserva en ese transporte
-        if (datosCupo.length === 0) {
-            return res.status(404).json({
-                error: 'El usuario no tiene cupos reservados en este transporte'
-            });
-        }
-
-        // Retornar el registro con el ID del transporte y la cantidad reservada
-        return res.status(200).json(datosCupo[0]);
-
-    } catch (error) {
-        console.error('Error al consultar los cupos del transporte:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al consultar los cupos'
-        });
-    }
-});
-
-// ============================================
-// ENDPOINT: CONSULTAR PASAJEROS Y CUPOS DE UN TRANSPORTE
-// GET /api/transportes/:id/pasajeros
-// ============================================
-app.get('/api/transportes/:id/pasajeros', async (req, res) => {
+app.patch('/api/reportes/:id/encontrado', async (req, res) => {
     try {
         const { id } = req.params;
 
+        // Validar que el ID sea numérico
         if (!id || isNaN(id)) {
-            return res.status(400).json({
-                error: 'El ID del transporte debe ser un número válido'
+            return res.status(400).json({ 
+                error: 'El ID del reporte es obligatorio y debe ser un número válido.' 
             });
         }
 
-        const queryCall = 'CALL consultar_cupos(?)';
-        const [resultado] = await pool.query(queryCall, [Number(id)]);
+        const query = `
+            UPDATE reporte 
+            SET estado_reporte = 'encontrado' 
+            WHERE id = ?
+        `;
 
-        const pasajeros = resultado[0] || [];
+        const [result] = await pool.execute(query, [id]);
 
-        return res.status(200).json(pasajeros);
+        // Verificar si el reporte existe en la base de datos
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Reporte no encontrado.' });
+        }
+
+        return res.status(200).json({
+            mensaje: 'El estado del reporte ha sido actualizado a encontrado con éxito.'
+        });
 
     } catch (error) {
-        console.error('Error al consultar pasajeros del transporte:', error);
-
-        return res.status(500).json({
-            error: 'Error interno al consultar los pasajeros'
-        });
+        console.error('Error al actualizar el reporte a encontrado:', error);
+        return res.status(500).json({ error: 'Error interno del servidor al procesar la solicitud.' });
     }
 });
-
 
 // Iniciar servidor
 const PORT = process.env.PORT || 8083;
