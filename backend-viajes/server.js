@@ -1,9 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
-const fs = require('fs');
+const { v2: cloudinary } = require('cloudinary');
 
 const app = express();
 app.use(express.json());
@@ -14,11 +15,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Configuración de la conexión a MySQL
 const pool = mysql.createPool({
-    host: '192.168.0.103',
-    port: 3310,
-    user: 'root',
-    password: 'admin',
-    database: 'rastro',
+    host: process.env.DB_HOST || '192.168.0.103',
+    port: process.env.DB_PORT || 3310,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'admin',
+    database: process.env.DB_NAME || 'rastro',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -51,38 +52,58 @@ app.get('/api/especies/nombres', async (req, res) => {
 
 // ============================================
 // ENDPOINT: Subir foto (POST /api/upload)
-// Guarda la imagen en public/uploads y devuelve su ruta
+// Sube la imagen a Cloudinary y devuelve su URL pública
 // ============================================
-const uploadsDir = path.join(__dirname, 'public', 'uploads');
-fs.mkdirSync(uploadsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadsDir),
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-    }
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
 });
 
+// La imagen se mantiene en memoria (no se escribe en disco)
 const upload = multer({
-    storage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 }, // máx. 5 MB
     fileFilter: (req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
-        const permitido = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+        const extOk = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+        // Flutter (http.MultipartFile.fromBytes) puede enviar 'application/octet-stream'
+        const mimeOk = file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream';
+        const permitido = extOk && mimeOk;
         cb(permitido ? null : new Error('Solo se permiten imágenes JPG, PNG o WEBP.'), permitido);
     }
 });
 
+// Convierte el buffer en un stream y lo sube a Cloudinary
+const subirACloudinary = (buffer) =>
+    new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            { folder: 'rastro/reportes', resource_type: 'image' },
+            (error, result) => (error ? reject(error) : resolve(result))
+        );
+        stream.end(buffer);
+    });
+
 app.post('/api/upload', (req, res) => {
-    upload.single('foto')(req, res, (err) => {
+    upload.single('foto')(req, res, async (err) => {
         if (err) {
             return res.status(400).json({ error: err.message });
         }
         if (!req.file) {
             return res.status(400).json({ error: 'No se recibió ninguna imagen.' });
         }
-        return res.status(201).json({ url: `/uploads/${req.file.filename}` });
+
+        try {
+            const result = await subirACloudinary(req.file.buffer);
+            return res.status(201).json({
+                url: result.secure_url,       // URL completa https://res.cloudinary.com/...
+                public_id: result.public_id   // útil si luego quieres borrar la imagen
+            });
+        } catch (error) {
+            console.error('Error al subir imagen a Cloudinary:', error);
+            return res.status(500).json({ error: 'No se pudo subir la imagen.' });
+        }
     });
 });
 
@@ -102,14 +123,14 @@ app.post('/api/reportes', async (req, res) => {
         } = req.body;
 
         // Validaciones básicas de campos obligatorios
-        if (!esTexto(nombre_usuario) || !esTexto(nombre_animal) || !esTexto(nombre_especie) || 
+        if (!esTexto(nombre_usuario) || !esTexto(nombre_animal) || !esTexto(nombre_especie) ||
             !esTexto(descripcion_animal) || !esTexto(descripcion_lugar) || !esTexto(fecha_perdio) || !esTexto(url_foto)) {
-            return res.status(400).json({ 
-                error: 'Todos los campos son obligatorios para registrar el reporte.' 
+            return res.status(400).json({
+                error: 'Todos los campos son obligatorios para registrar el reporte.'
             });
         }
 
-        // Llamada al Stored Procedure: 
+        // Llamada al Stored Procedure:
         // Pasamos 7 parámetros de entrada (?) y declaramos uno de salida (@mensaje)
         const query = 'CALL registrar_reporte(?, ?, ?, ?, ?, ?, ?, @mensaje)';
         const values = [
@@ -153,8 +174,8 @@ app.get('/api/reportes/usuario/:nombre_usuario', async (req, res) => {
 
         // Validar que el parámetro no esté vacío
         if (!esTexto(nombre_usuario)) {
-            return res.status(400).json({ 
-                error: 'El nombre de usuario es obligatorio en la ruta.' 
+            return res.status(400).json({
+                error: 'El nombre de usuario es obligatorio en la ruta.'
             });
         }
 
@@ -185,8 +206,8 @@ app.get('/api/reportes', async (req, res) => {
 
         // Validar que se envíe el usuario que está consultando
         if (!esTexto(usuario)) {
-            return res.status(400).json({ 
-                error: 'El parámetro "usuario" es obligatorio en la consulta (ej. /api/reportes?usuario=cgomez).' 
+            return res.status(400).json({
+                error: 'El parámetro "usuario" es obligatorio en la consulta (ej. /api/reportes?usuario=cgomez).'
             });
         }
 
@@ -221,8 +242,8 @@ app.post('/api/avistamientos', async (req, res) => {
 
         // Validaciones básicas de campos obligatorios
         if (!esTexto(nombre_usuario) || !esTexto(descripcion) || !id_reporte || !esTexto(fecha_encontro)) {
-            return res.status(400).json({ 
-                error: 'Los campos nombre_usuario, descripcion, id_reporte y fecha_encontro son obligatorios.' 
+            return res.status(400).json({
+                error: 'Los campos nombre_usuario, descripcion, id_reporte y fecha_encontro son obligatorios.'
             });
         }
 
@@ -267,8 +288,8 @@ app.get('/api/reportes/:id/detalle', async (req, res) => {
 
         // Validar que el ID sea numérico
         if (!id || isNaN(id)) {
-            return res.status(400).json({ 
-                error: 'El ID del reporte es obligatorio y debe ser un número válido.' 
+            return res.status(400).json({
+                error: 'El ID del reporte es obligatorio y debe ser un número válido.'
             });
         }
 
@@ -304,14 +325,14 @@ app.patch('/api/reportes/:id/cancelar', async (req, res) => {
 
         // Validar que el ID sea numérico
         if (!id || isNaN(id)) {
-            return res.status(400).json({ 
-                error: 'El ID del reporte es obligatorio y debe ser un número válido.' 
+            return res.status(400).json({
+                error: 'El ID del reporte es obligatorio y debe ser un número válido.'
             });
         }
 
         const query = `
-            UPDATE reporte 
-            SET estado_reporte = 'cancelado' 
+            UPDATE reporte
+            SET estado_reporte = 'cancelado'
             WHERE id = ?
         `;
 
@@ -341,14 +362,14 @@ app.patch('/api/reportes/:id/encontrado', async (req, res) => {
 
         // Validar que el ID sea numérico
         if (!id || isNaN(id)) {
-            return res.status(400).json({ 
-                error: 'El ID del reporte es obligatorio y debe ser un número válido.' 
+            return res.status(400).json({
+                error: 'El ID del reporte es obligatorio y debe ser un número válido.'
             });
         }
 
         const query = `
-            UPDATE reporte 
-            SET estado_reporte = 'encontrado' 
+            UPDATE reporte
+            SET estado_reporte = 'encontrado'
             WHERE id = ?
         `;
 

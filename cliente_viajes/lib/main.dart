@@ -31,9 +31,9 @@ class ServicioBScreen extends StatefulWidget {
 
 class _ServicioBScreenState extends State<ServicioBScreen> {
   // 1. Configuración de URLs del Servicio Central (Servicio A)
-final String loginUrl = 'http://192.168.0.103:8081/index.html';
-final String dashboardUrl = 'http://192.168.0.103:8081/dashboard.html';
-final String baseUrl = 'http://192.168.0.103:8083';
+  final String loginUrl = 'http://192.168.0.103:8081/index.html';
+  final String dashboardUrl = 'http://192.168.0.103:8081/dashboard.html';
+  final String baseUrl = 'http://192.168.0.103:8083';
 
   String? usuarioFinal;
   String? tokenFinal;
@@ -515,8 +515,8 @@ class _ReporteFormScreenState extends State<ReporteFormScreen> {
       final data = jsonDecode(resp.body);
 
       if (resp.statusCode == 201) {
-        // Ruta completa que se enviará como url_foto
-        setState(() => _urlFotoCtrl.text = '${widget.baseUrl}${data['url']}');
+        // Ahora la URL ya viene completa desde Cloudinary (https://res.cloudinary.com/...)
+        setState(() => _urlFotoCtrl.text = data['url'].toString());
       } else {
         _mostrarMensaje(
           data['error'] ?? 'No se pudo subir la foto.',
@@ -792,9 +792,8 @@ class _TodosReportesScreenState extends State<TodosReportesScreen> {
 
     try {
       // Se envía el usuario como query parameter
-      final uri = Uri.parse(
-        '${widget.baseUrl}/api/reportes',
-      ).replace(queryParameters: {'usuario': widget.usuario});
+      final uri = Uri.parse('${widget.baseUrl}/api/reportes')
+          .replace(queryParameters: {'usuario': widget.usuario});
 
       final resp = await http.get(uri);
 
